@@ -121,25 +121,4 @@ class ReservaStorage:
 
         return dict(fila)
 
-    def buscar_solapadas(
-        self,
-        unidad_id: str,
-        inicio: str,
-        fin: str,
-        excluir_id: str | None = None,
-    ) -> list[dict[str, Any]]:
-        """Reservas activas de la unidad que se pisan con [inicio, fin)."""
-        consulta = (
-            f"SELECT {_COLUMNAS_SQL} FROM reservas "
-            "WHERE unidad_id = ? AND estado = 'activa' "
-            "AND inicio < ? AND fin > ?"
-        )
-        params: list[Any] = [unidad_id, fin, inicio]
-        if excluir_id is not None:
-            consulta += " AND id != ?"
-            params.append(excluir_id)
-        consulta += " ORDER BY inicio"
-
-        with self._connect() as conn:
-            filas = conn.execute(consulta, params).fetchall()
-        return [dict(fila) for fila in filas]
+    
