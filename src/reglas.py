@@ -124,3 +124,17 @@ def crear_reserva(
         "fin": fin,
         "estado": "activa",
     }
+
+
+def cancelar_reserva(reserva_id: str, storage: Any) -> dict[str, Any]:
+    """Cancela una reserva activa conservando su identificador y datos."""
+    reserva = storage.obtener_por_id(reserva_id)
+    if reserva is None:
+        raise KeyError(f"Reserva no encontrada: {reserva_id}")
+
+    if reserva.get("estado") == "cancelada":
+        raise ValueError(f"La reserva {reserva_id} ya está cancelada")
+
+    reserva["estado"] = "cancelada"
+    storage.guardar(reserva)
+    return reserva
