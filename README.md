@@ -54,7 +54,74 @@ Cada ID identifica una unidad física distinta.
 6. Se rechazan: unidad `XXX-99`, solicitante `"   "`, fecha `2026-13-40T10:00` e inicio igual o posterior al fin.
 
 ## 2. Solución
-(pendiente)
+### Estructura
+```
+data/inventario.json      Inventario inicial (5 unidades)
+src/reglas.py             Validaciones, superposición, disponibilidad, creación y cancelación
+src/storage.py            Persistencia en SQLite
+src/cli.py                Consola (argparse)
+tests/                    Pruebas automáticas (pytest)
+docs/                     Progreso y registro de cada episodio
+.github/copilot-instructions.md   Instrucciones del agente
+```
+
+### Decisiones técnicas
+- Python 3.11 con la biblioteca estándar; la única dependencia es `pytest` (`requirements.txt`).
+- Almacenamiento en SQLite (módulo estándar `sqlite3`); alternativa descartada: un archivo JSON.
+- Interfaz de consola con `argparse`.
+- Una sola regla de superposición (`intervalos_se_superponen`, intervalos semiabiertos), usada por la consulta de disponibilidad y por la creación de reservas (R9).
+
+### Requisitos previos y versiones
+Python 3.11 o superior y git. Probado con Python 3.11.2, pytest 7.3.1 y git 2.45.2 en Windows 10.
+
+### Instalación
+```
+git clone https://github.com/EMRocioB/reservas-lab.git
+cd reservas-lab
+python -m pip install -r requirements.txt
+```
+
+### Carga inicial y reinicio de datos
+- El inventario se lee de `data/inventario.json` en cada ejecución; no hay que cargarlo.
+- Las reservas se guardan en `data/reservas.db`, que se crea sola la primera vez. El archivo no se sube a git.
+- Para reiniciar los datos, borra la base: `Remove-Item data/reservas.db*` (PowerShell). **Esto elimina todas las reservas, activas y canceladas.**
+
+### Comandos
+```
+python src/cli.py unidades
+python src/cli.py disponibilidad <unidad> <inicio> <fin>
+python src/cli.py reservar <unidad> <solicitante> <inicio> <fin>
+python src/cli.py cancelar <id>
+python src/cli.py listar
+```
+Las fechas van en formato `AAAA-MM-DDTHH:MM`. Si el solicitante lleva espacios, ponlo entre comillas.
+
+Pruebas automáticas: `python -m pytest` (26 pruebas).
+
+### Ejemplo de entrada y salida
+```
+> python src/cli.py reservar MIC-01 Ana 2026-11-03T10:00 2026-11-03T11:00
+Reserva creada: dc79b1ade73c4f90b0f2a8a58cc1b726
+> python src/cli.py reservar MIC-01 Maria 2026-11-03T10:30 2026-11-03T11:30
+La unidad MIC-01 ya está ocupada en ese intervalo
+> python src/cli.py reservar MIC-01 Maria 2026-11-03T11:00 2026-11-03T12:00
+Reserva creada: b26e4125d37c450a95b20a63b52e18ce
+> python src/cli.py cancelar dc79b1ade73c4f90b0f2a8a58cc1b726
+Reserva cancelada: dc79b1ade73c4f90b0f2a8a58cc1b726
+> python src/cli.py disponibilidad MIC-01 2026-11-03T10:00 2026-11-03T11:00
+Disponible
+> python src/cli.py listar
+dc79b1ade73c4f90b0f2a8a58cc1b726 | MIC-01 | Ana | 2026-11-03T10:00 | 2026-11-03T11:00 | cancelada
+b26e4125d37c450a95b20a63b52e18ce | MIC-01 | Maria | 2026-11-03T11:00 | 2026-11-03T12:00 | activa
+```
+
+### Pendientes y limitaciones
+- Los ids son uuid de 32 caracteres, incómodos de copiar.
+- El error por id inexistente sale con comillas (`'Reserva no encontrada: ...'`).
+- No hay zona horaria ni conversión; se permiten fechas pasadas.
+- Los tests de consola no cubren superposición ni fechas inválidas (se comprobaron a mano; ver `docs/episodio-3.md`).
+- Sin autenticación, notificaciones ni administración del inventario, según el alcance.
+- Sin control de concurrencia entre varios procesos escribiendo a la vez.
 
 ## 3. Preparación del agente
 ### Entorno y modelo
@@ -85,4 +152,21 @@ El progreso y las decisiones se conservan en archivos versionados: [`docs/PROGRE
 Además del agente, usé un asistente de chat (fuera del repositorio) para planificar los pasos y para escribir la corrección del Episodio 1. Esa corrección no la hizo el agente, y así consta en [`docs/episodio-1.md`](docs/episodio-1.md).
 
 ## 4. Registro de decisiones y delegación
-(pendiente)
+### Los tres episodios de delegación
+
+| Episodio | Requisito | Qué hizo el agente | Decisión humana | Evidencia |
+|---|---|---|---|---|
+| 1. Reglas | R4, R5, R6, R9 | Escribió 10 tests y `src/reglas.py` | **Corregir**: encontré un atajo que daba "sin superposición" para intervalos idénticos, lógica duplicada que dejaba R9 sin cumplir y un test que daba por buena esa conducta | [registro](docs/episodio-1.md), commit `1f7428d` (versión corregida) |
+| 2. Persistencia | R8 | Escribió 4 tests y `src/storage.py` | **Aceptar con correcciones**: quité `buscar_solapadas` (no pedida, sin tests, duplicaba la regla) y amplié `.gitignore` | [registro](docs/episodio-2.md), commits `f233e29` (agente) y `90cb3c8` (corrección) |
+| 3. Cancelación y consola | R2, R3, R7 | Escribió 6 tests, `src/cli.py` y `cancelar_reserva` | **Aceptar sin cambios**: usa las mismas reglas y no hay errores que corregir | [registro](docs/episodio-3.md), commit HASH_EPISODIO3 |
+
+Cada registro detalla contexto, extracto de instrucción, resultado del agente, decisión y las pruebas que ejecuté yo. Suite completa verificada: 26 passed (pytest 7.3.1, Python 3.11.2).
+
+### Decisiones significativas
+- **Intervalos semiabiertos `[inicio, fin)`**. Permiten reservas consecutivas sin ambigüedad. Alternativa: intervalos cerrados, que obligarían a un margen entre reservas.
+- **SQLite en vez de JSON**. Escritura con commit/rollback y recuperación al reiniciar sin reescribir todo el archivo. Consecuencia: aparece un archivo `.db` (y auxiliares) que se excluyó de git.
+- **Una sola regla de superposición** en `reglas.py`. Evita que la consulta y la creación se contradigan (R9). Consecuencia: eliminé `buscar_solapadas`, que repetía la regla en SQL.
+- **Fechas pasadas permitidas y sin zona horaria**. Así las pruebas no dependen del reloj. Consecuencia: el sistema no impide reservar en el pasado.
+- **Un agente (Copilot Free)** más un asistente de chat externo para planificar y para escribir la corrección del episodio 1; esa corrección no la hizo el agente.
+- **No guardé capturas**: la evidencia es textual y reproducible (comandos y resultados en los registros).
+- **Limitación en el historial**: en el episodio 1 no hice commit de la versión del agente antes de corregirla, por lo que esa versión no se puede recuperar de git.
